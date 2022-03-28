@@ -52,6 +52,24 @@ def gini_score_fast_old(X, y, num_bins=10):
         G_F[j] = torch.sum(G_U, axis=0)
     return G_F
 
+
+
+
+
+
+
+def gini_filter(X_train, X_test, Y_train, Y_test, left=0.25):
+    gini_score = gini_score_fast_old(X_train, Y_train)
+    w = X_train.shape[1]
+    indices = torch.argsort(gini_score)
+    if isinstance(left, float):
+        indices = indices[:int(left * indices.shape[0])]
+    if isinstance(left, int):
+        indices = indices[:left]
+    X_train = X_train[:, indices]
+    X_test = X_test[:, indices]
+    return X_train, X_test, Y_train, Y_test
+
 if __name__ == '__main__':
     x = torch.randn(100, 20)
     y = torch.ones(100, dtype=int)
