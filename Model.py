@@ -1,9 +1,31 @@
+"""
+======================= START OF LICENSE NOTICE =======================
+  Copyright (C) 2022 HONGYI001. All Rights Reserved
 
+  NO WARRANTY. THE PRODUCT IS PROVIDED BY DEVELOPER "AS IS" AND ANY
+  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL DEVELOPER BE LIABLE FOR
+  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+  GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+  IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THE PRODUCT, EVEN
+  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+======================== END OF LICENSE NOTICE ========================
+  Primary Author: HONGYI001
+
+"""
+
+from pyrsistent import freeze
 from stg.models import MLPLayer
 from torch import nn 
 import torch 
 import numpy as np
 import math
+
+
 
 
 class FeatureSelector(nn.Module):
@@ -12,12 +34,21 @@ class FeatureSelector(nn.Module):
         self.mu = torch.nn.Parameter(0.01*torch.randn(input_dim, ), requires_grad=True)
         self.noise = torch.randn(self.mu.size()) 
         self.sigma = sigma
+        self.freeze = False
     
     def forward(self, prev_x):
-        z = self.mu + self.sigma*self.noise.normal_()*self.training 
-        stochastic_gate = self.hard_sigmoid(z)
-        new_x = prev_x * stochastic_gate
-        return new_x
+        if self.freeze:
+            return prev_x
+            
+        elif self.training:
+            z = self.mu + self.sigma*self.noise.normal_()*self.training 
+            stochastic_gate = self.hard_sigmoid(z)
+            new_x = prev_x * stochastic_gate
+            return new_x
+        else:
+            z = self.hard_sigmoid(self.mu)
+            return prev_x * z        
+
     
     def hard_sigmoid(self, x):
         return torch.clamp(x+0.5, 0.0, 1.0)
@@ -77,10 +108,12 @@ class STGEmbModel(nn.Module):
     def freeze_fs(self):
         for param in self.fs.parameters():
             param.requires_grad = False
+        self.fs.freeze = True
 
     def unfreeze_fs(self):
         for param in self.fs.parameters():
             param.requires_grad = True 
+        self.fs.freeze = False
     
     def get_reg_loss(self):
         reg = torch.mean(self.reg((self.mu + 0.5)/self.sigma)) 

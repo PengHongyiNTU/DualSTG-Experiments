@@ -1,3 +1,22 @@
+"""
+======================= START OF LICENSE NOTICE =======================
+  Copyright (C) 2022 HONGYI001. All Rights Reserved
+
+  NO WARRANTY. THE PRODUCT IS PROVIDED BY DEVELOPER "AS IS" AND ANY
+  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL DEVELOPER BE LIABLE FOR
+  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+  GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+  IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THE PRODUCT, EVEN
+  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+======================== END OF LICENSE NOTICE ========================
+  Primary Author: HONGYI001
+
+"""
 from Data import prepare_data
 from Model import FNNModel, STGEmbModel, DualSTGModel
 from torch import nn
@@ -8,6 +27,8 @@ from sklearn.metrics import accuracy_score
 import seaborn as sns
 import math
 import numpy as np
+
+
 
 
 
@@ -48,6 +69,7 @@ def make_binary_models(
         top_model = nn.Sequential(
             nn.Linear(num_clients*emb_dim, 32), nn.ReLU(True), nn.Linear(32, output_dim), nn.Sigmoid()
         )
+
     elif type == 'DualSTG':
         for input_dim in input_dim_list:
             model = DualSTGModel(
@@ -88,8 +110,8 @@ def train(
     models, top_model,
     train_loader, test_loader, 
     criterion=nn.BCELoss(),
-    optimizer = 'Adam', lr = 1e-3,
-    epochs=100, freeze_btm_at=5, freeze_top_at=15,
+    optimizer ='SGD', lr = 1e-2,
+    epochs=100, freeze_btm_till=5, freeze_top_till=15,
     verbose=True, save_dir='Checkpoints/model.pt',
     log_dir='Logs/log.csv',
     save_mask_at=20, mask_dir='Mask/'):
@@ -99,14 +121,14 @@ def train(
     best_acc = 0
     for e in range(1, epochs+1):
         if isinstance(models[0], DualSTGModel) or isinstance(models[0], STGEmbModel):
-            if e <= freeze_btm_at:
+            if e <= freeze_btm_till:
                 for model in models:
                     model.freeze_fs()
             else:
                 for model in models:
                     model.unfreeze_fs()
             if isinstance(models[0], DualSTGModel):
-                if e <= freeze_top_at:
+                if e <= freeze_top_till:
                     for model in models:
                         model.freeze_top()
                 else:

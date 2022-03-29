@@ -1,4 +1,27 @@
+"""
+======================= START OF LICENSE NOTICE =======================
+  Copyright (C) 2022 HONGYI001. All Rights Reserved
+
+  NO WARRANTY. THE PRODUCT IS PROVIDED BY DEVELOPER "AS IS" AND ANY
+  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL DEVELOPER BE LIABLE FOR
+  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+  GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+  IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THE PRODUCT, EVEN
+  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+======================== END OF LICENSE NOTICE ========================
+  Primary Author: HONGYI001
+
+"""
+from numpy import require
 import torch
+
+
+
 def gini_score_fast(X, y, num_bins=10):
     gamma = torch.nn.functional.one_hot(y)
     G_F = torch.zeros((X.shape[1], ), dtype=torch.float64).t()
@@ -71,7 +94,7 @@ def gini_filter(X_train, X_test, Y_train, Y_test, left=0.25):
     return X_train, X_test, Y_train, Y_test
 
 if __name__ == '__main__':
-    x = torch.randn(100, 20)
-    y = torch.ones(100, dtype=int)
+    x = torch.randn(100, 20, requires_grad=True)
+    y = torch.ones(100, dtype=int, requires_grad=False)
     g_score = gini_score_fast_old(x, y)
     print(g_score.shape)

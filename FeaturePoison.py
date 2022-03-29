@@ -1,8 +1,31 @@
+"""
+======================= START OF LICENSE NOTICE =======================
+  Copyright (C) 2022 HONGYI001. All Rights Reserved
+
+  NO WARRANTY. THE PRODUCT IS PROVIDED BY DEVELOPER "AS IS" AND ANY
+  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL DEVELOPER BE LIABLE FOR
+  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+  GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+  IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THE PRODUCT, EVEN
+  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+======================== END OF LICENSE NOTICE ========================
+  Primary Author: HONGYI001
+
+"""
 import numpy as np
 from scipy.stats import skewnorm
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import warnings
+from sklearn.preprocessing import MinMaxScaler
+
+
+
 
 def insert_random_noise(
     X, num_noise_features=5, 
@@ -100,6 +123,11 @@ def insert_feature_noise(X, y,
     X_train, X_test, Y_train, Y_test = insert_shortcut_noise(
         X_noise, y, num_shortcut, [p]*num_shortcut, seed, test_size
     )
+    scaler = MinMaxScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+    X_train = pd.DataFrame(X_train)
+    X_test = pd.DataFrame(X_test)
     return X_train, X_test, Y_train, Y_test
 
 
