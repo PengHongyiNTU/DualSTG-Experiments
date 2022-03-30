@@ -17,7 +17,7 @@
   Primary Author: HONGYI001
 
 """
-from Data import prepare_data
+from Data import VFLDataset
 from Model import FNNModel, STGEmbModel, DualSTGModel
 from torch import nn
 import torch
@@ -27,6 +27,7 @@ from sklearn.metrics import accuracy_score
 import seaborn as sns
 import math
 import numpy as np
+
 
 
 
@@ -108,20 +109,22 @@ def visualize_gate(z_list):
 
 def train(
     models, top_model,
-    train_loader, val_loader, test_loader, 
+    train_loader, val_loader, test_loader,
     criterion=nn.BCELoss(),
     optimizer ='SGD', lr = 1e-2,
     epochs=100, freeze_btm_till=5, freeze_top_till=15,
     verbose=True, save_dir='Checkpoints/model.pt',
     log_dir='Logs/log.csv',
-    save_mask_at=20, mask_dir='Mask/'):
+    save_mask_at=20, mask_dir='Mask/',
+    early_stopping=True, patience=10,
+    noise_label=None):
+
+
     history = []
     column_names = []
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu', 
-    early_stopping=False, patience=10)
-    
-    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     best_acc = 0
+
     for e in range(1, epochs+1):
         if isinstance(models[0], DualSTGModel) or isinstance(models[0], STGEmbModel):
             if e <= freeze_btm_till:
@@ -147,6 +150,7 @@ def train(
         parameters = [model.parameters() for model in models]
         parameters.append(top_model.parameters())
         parameters = list(itertools.chain(*parameters))
+        
         if optimizer == "Adam":
             optimizer = torch.optim.Adam(
                parameters, lr=lr)
@@ -176,6 +180,29 @@ def train(
             train_loss += loss.item()
             train_acc += binary_acc(pred.detach().cpu().numpy(), data_y.cpu().numpy())
         
+
+        ##################################
+        # Validation
+        ##################################
+        val_acc = 0
+        map(lambda m: m.eval(), models)
+        top_model.eval()
+        with torch.no_grad():
+            for items, data_y in val_loader:
+                assert len(items) == len(models)
+                embs = []
+                data_y = data_y.float().to(device).view(-1, 1)
+                for i, item in enumerate(items):
+                    data_x = item 
+                    data_x = data_x.float().to(device)
+                    emb = models[i](data_x)
+                    embs.append(emb)
+                embs = torch.cat(embs, dim=1)
+                pred = top_model(embs)
+                val_acc += binary_acc(pred.detach().cpu().numpy(), data_y.cpu().numpy())
+
+
+
         ##################################
         ########## Test ##################
         ##################################
@@ -201,18 +228,36 @@ def train(
         ##################################
         test_acc = test_acc / len(test_loader)
         train_acc = train_acc / len(train_loader)
-        if test_acc > best_acc:
-            best_acc = test_acc
+        val_acc = val_acc / len(val_loader)
+
+
+        if early_stopping:
+            if val_acc > best_acc:
+                best_acc = val_acc
+                torch.save(models, save_dir)
+                patience = 10
+            else:
+                patience -= 1
+                if patience <= 0:
+                    print("Early stopped at {} epochs".format(e))
+                    break
+        
+        if val_acc > best_acc:
+            best_acc = val_acc
             torch.save(models, save_dir)
+
         ##################################
         ###### Logging ###################
         ##################################
+    
+
+
         if verbose:
             if isinstance(models[0], FNNModel):
-                print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Test Acc: {:.4f}, Best Acc: {:.4f}".format(
-                    e, train_loss, train_acc, test_acc, best_acc))
-                history.append([train_loss, train_acc, test_acc])
-                column_names = ['train_loss', 'train_acc', 'test_acc']
+                print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Val Acc {:.4f}, Test Acc: {:.4f}, Best Acc: {:.4f}".format(
+                    e, train_loss, train_acc, val_acc, test_acc, best_acc))
+                history.append([train_loss, train_acc, val_acc, test_acc])
+                column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc']
             
             elif isinstance(models[0], STGEmbModel):
                 z_list = []
@@ -222,15 +267,45 @@ def train(
                     z_list.append(z)
                     num_feats.append(num_feat)
                 num_feats = sum(num_feats)
-                print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Test Acc: {:.4f}, Best Acc: {}, Num Feats: {:.4f}".format(
-                    e, train_loss, train_acc, test_acc, best_acc, num_feats))
-                history.append([train_loss, train_acc, test_acc, num_feats])
-                column_names = ['train_loss', 'train_acc', 'test_acc', 'num_feats']
+               
+                
                 if e%save_mask_at == 0:
                     z_heat_map = visualize_gate(z_list)
                     z_heat_map.figure.suptitle('Feature Gates')
                     z_heat_map.figure.savefig(mask_dir + 
                         'STG_gates_{}.png'.format(e))
+
+                if noise_label is not None:
+                    random_label, over_label, short_label = noise_label
+                    all_label = random_label + over_label + short_label
+                    all_label[all_label > 0] = 1
+                    z_pred = np.concatenate(z_list)
+                    z_pred = z_pred.reshape(z_pred.shape[0], )
+                    assert len(z_pred) == len(random_label)
+                    random_acc = accuracy_score(random_label, z_pred)
+                    over_acc = accuracy_score(over_label, z_pred)
+                    short_acc = accuracy_score(short_label, z_pred)
+                    total_acc = accuracy_score(all_label, z_pred)
+            
+                    print("Random: {:.4f}, Over: {:.4f}, Short: {:.4f}, Total {:4f}".format(
+                        random_acc, over_acc, short_acc, total_acc))
+                    print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Val Acc {:.4f}, Test Acc: {:.4f}, Best Acc: {}, Num Feats: {:.4f}".format(
+                        e, train_loss, train_acc, val_acc, test_acc, best_acc, num_feats))
+                    history.append([train_loss, train_acc, val_acc, test_acc, num_feats, 
+                        random_acc, over_acc, short_acc, total_acc])
+                    column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats',
+                        'random_acc', 'over_acc', 'short_acc', 'total_acc']
+                
+                else:
+                    print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Val Acc {:.4f}, Test Acc: {:.4f}, Best Acc: {}, Num Feats: {:.4f}".format(
+                        e, train_loss, train_acc, val_acc, test_acc, best_acc, num_feats))
+                    history.append([train_loss, train_acc, val_acc, test_acc, num_feats])
+                    column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats']
+                
+
+
+
+            
 
             elif isinstance(models[0], DualSTGModel):
                 top_z_list = []
@@ -245,10 +320,7 @@ def train(
                     num_embs.append(num_emb)
                 num_feats = sum(num_feats)
                 num_emb = sum(num_embs)
-                print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Test Acc: {:.4f}, Best Acc: {}, Num Feats: {:.4f}, Num Emb: {:.4f}".format(
-                    e, train_loss, train_acc, test_acc, best_acc, num_feats, num_emb))
-                history.append([train_loss, train_acc, test_acc, num_feats, num_emb])
-                column_names = ['train_loss', 'train_acc', 'test_acc', 'num_feats', 'num_emb']
+             
                 if e%save_mask_at == 0:
                     top_z_heatmap = visualize_gate(top_z_list)
                     btm_z_heatmap = visualize_gate(btm_z_list)
@@ -258,6 +330,36 @@ def train(
                         mask_dir+"Embedding_heatmap_{}.png".format(e))
                     btm_z_heatmap.figure.savefig(
                         mask_dir+"Feature_heatmap_{}.png".format(e))
+
+                if noise_label is not None:
+                    random_label, over_label, short_label = noise_label
+                    all_label = random_label + over_label + short_label
+                    all_label[all_label > 0] = 1
+                    z_pred = np.concatenate(btm_z_list)
+                    z_pred = z_pred.reshape(z_pred.shape[0], )
+                    assert len(z_pred) == len(random_label)
+                    random_acc = accuracy_score(random_label, z_pred)
+                    over_acc = accuracy_score(over_label, z_pred)
+                    short_acc = accuracy_score(short_label, z_pred)
+                    total_acc = accuracy_score(all_label, z_pred)
+            
+                    print("Random: {:.4f}, Over: {:.4f}, Short: {:.4f}, Total {:4f}".format(
+                        random_acc, over_acc, short_acc, total_acc))
+                    print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Val Acc {:.4f}, Test Acc: {:.4f}, Best Acc: {}, Num Feats: {:.4f}, Num Emb: {:.4f}".format(
+                        e, train_loss, train_acc, test_acc, best_acc, num_feats, num_emb))
+                    history.append([train_loss, train_acc, val_acc, test_acc, num_feats, num_emb, 
+                        random_acc, over_acc, short_acc, total_acc])
+                    column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats', 'num_emb',
+                        'random_acc', 'over_acc', 'short_acc', 'total_acc']
+                
+                else:
+                    print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Val Acc {:.4f}, Test Acc: {:.4f}, Best Acc: {}, Num Feats: {:.4f}, Num Emb: {:.4f}".format(
+                    e, train_loss, train_acc, val_acc, test_acc, best_acc, num_feats, num_emb))
+                    history.append([train_loss, train_acc, val_acc, test_acc, num_feats, num_emb])
+                    column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats', 'num_emb']
+                
+
+
                 
     history = pd.DataFrame(
         history, columns=column_names)
@@ -269,14 +371,25 @@ def train(
 
 
 if __name__ == '__main__':
+    """
     train_loader, test_loader, input_dim_list = prepare_data(
         'BASEHOCK', num_clients=1
     )
+    """
+    dataset = VFLDataset(
+        "BASEHOCK", scale=True, num_clients=3, feat_idxs=None
+    )
+    train_loader = torch.utils.data.DataLoader(dataset.train(), batch_size=128, shuffle=True)
+    val_loader = torch.utils.data.DataLoader(dataset.valid(), batch_size=1000, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(dataset.test(), batch_size=1000, shuffle=False)
+    print(len(train_loader))
+    print(len(val_loader))
+    print(len(test_loader))
+    input_dim_list = dataset.get_input_dim_list()
     models, top_model = make_binary_models(
         input_dim_list, type='DualSTG')
-    print(models)
-    train(
-        models, top_model, train_loader, test_loader
-    )
+    print(models, top_model)
+    train(models, top_model, train_loader, val_loader, test_loader,
+        epochs=10)
 
 

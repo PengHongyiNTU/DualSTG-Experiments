@@ -100,6 +100,17 @@ class VFLDataset(Dataset):
 
         self._permute_idx()
 
+
+
+        X_train, X_val, y_train, y_val = train_test_split(
+            self.X_train, self.y_train, test_size=0.2,
+            random_state=seed)
+        self.X_train = X_train
+        self.X_val = X_val
+        self.y_train = y_train
+        self.y_val = y_val
+
+
         # Distribute Dataset to multiple clients
         # data_X, data_y, feat_idx_list = self._load_and_split(filename, 
         # scale, num_clients, feat_idxs)
@@ -107,7 +118,10 @@ class VFLDataset(Dataset):
             self.y_train, num_clients, feat_idxs)
         self.feat_idxs_list = feat_idxs_list
         self.input_dim_list = [len(idx) for idx in feat_idxs_list]
-        self.training = True
+        
+        self.training = 'train'
+        
+
     
     def get_input_dim_list(self):
         return self.input_dim_list
@@ -134,11 +148,15 @@ class VFLDataset(Dataset):
             return self.random_noise_label, self.shorcut_label, self.overwhelmed_label, 
 
     def test(self):
-        self.training = False
+        self.training = 'test'
         return self
     
     def train(self):
-        self.training = True
+        self.training = 'train'
+        return self
+    
+    def valid(self):
+        self.training = 'valid'
         return self
 
     def _load(self, filename, scale):   
@@ -185,18 +203,23 @@ class VFLDataset(Dataset):
     
 
     def __len__(self):
-        if self.training:
+        if self.training == 'train':
             return self.X_train.shape[0]
-        else:
+        elif self.training == 'test':
             return self.X_test.shape[0]
+        elif self.training == 'valid':
+            return self.X_val.shape[0]
 
     def __getitem__(self, idx):
-        if self.training:
+        if self.training == 'train':
             X = self.X_train
             y = self.y_train
-        else:
+        elif self.training == 'test':
             X = self.X_test
             y = self.y_test
+        elif self.training == 'valid':
+            X = self.X_val
+            y = self.y_val
         items = []
         for i in range(self.num_clients+1):
             item = (X[idx, self.feat_idxs_list[i]])
@@ -224,8 +247,10 @@ if __name__ == "__main__":
     )
     train_loader = DataLoader(dataset, batch_size=128, shuffle=True)
     test_loader = DataLoader(dataset.test(), batch_size=1000, shuffle=False)
-    print(next(iter(train_loader))[0][0].shape)
-    print(next(iter(test_loader))[0][0].shape)
+    val_loader = DataLoader(dataset.valid(), batch_size=1000, shuffle=False)
+    print(len(train_loader))
+    print(len(test_loader))
+    print(len(val_loader))
     dataset = VFLDataset(
         "BASEHOCK", scale=True, num_clients=3, feat_idxs=None,
         insert_noise=True

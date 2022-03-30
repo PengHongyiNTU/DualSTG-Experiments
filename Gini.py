@@ -17,7 +17,6 @@
   Primary Author: HONGYI001
 
 """
-from numpy import require
 import torch
 
 
