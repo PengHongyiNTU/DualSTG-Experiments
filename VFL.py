@@ -17,6 +17,8 @@
   Primary Author: HONGYI001
 
 """
+from this import d
+from cv2 import mulSpectrums
 from Data import VFLDataset
 from Model import FNNModel, STGEmbModel, DualSTGModel
 from torch import nn
@@ -29,6 +31,15 @@ import math
 import numpy as np
 
 
+def initialize_mu(gini_labels, feat_idx_list):
+    mus = []
+    for i in range(len(feat_idx_list)):
+        gini_label = np.array(gini_labels[feat_idx_list[i]])
+        mu = np.where(gini_label==1, 0.5, -0.5)
+        # print(mu)
+        mu = torch.tensor(mu, dtype=torch.float32)
+        mus.append(mu)
+    return mus
 
 
 
@@ -36,7 +47,8 @@ import numpy as np
 def make_binary_models(
     input_dim_list, type='FNN', emb_dim=128, output_dim=1, hidden_dims=[512, 256],
     batch_norm=None, dropout=None, activation='relu',
-    flatten=True, sigma=1.0, lam=0.1, top_sigma=1.0, top_lam=0.1):
+    flatten=True, sigma=1.0, lam=0.1, top_sigma=1.0, top_lam=0.1, 
+    mus = None):
     models = []
     num_clients = len(input_dim_list)
     if type == 'FNN':
@@ -55,45 +67,89 @@ def make_binary_models(
             nn.Linear(num_clients*emb_dim, 32), nn.ReLU(True), nn.Linear(32, output_dim), nn.Sigmoid()
         )
     elif type == 'STG':
-        for input_dim in input_dim_list:
-            model = STGEmbModel(
-                input_dim=input_dim, 
-                output_dim=emb_dim,
-                hidden_dims=hidden_dims,
-                batch_norm=batch_norm,
-                dropout=dropout,
-                activation=activation,
-                flatten=flatten,
-                sigma=sigma,
-                lam=lam)
-            models.append(model)
+        for i, input_dim in enumerate(input_dim_list):
+            if mus is None:
+                model = STGEmbModel(
+                    input_dim=input_dim, 
+                    output_dim=emb_dim,
+                    hidden_dims=hidden_dims,
+                    batch_norm=batch_norm,
+                    dropout=dropout,
+                    activation=activation,
+                    flatten=flatten,
+                    sigma=sigma,
+                    lam=lam)
+                models.append(model)
+            else:
+                model = STGEmbModel(
+                    input_dim=input_dim, 
+                    output_dim=emb_dim,
+                    hidden_dims=hidden_dims,
+                    batch_norm=batch_norm,
+                    dropout=dropout,
+                    activation=activation,
+                    flatten=flatten,
+                    sigma=sigma,
+                    lam=lam, 
+                    mu=mus[i])
+                models.append(model)
+                
+
         top_model = nn.Sequential(
             nn.Linear(num_clients*emb_dim, 32), nn.ReLU(True), nn.Linear(32, output_dim), nn.Sigmoid()
         )
 
     elif type == 'DualSTG':
-        for input_dim in input_dim_list:
-            model = DualSTGModel(
-                input_dim=input_dim, 
-                output_dim=emb_dim,
-                hidden_dims=hidden_dims,
-                batch_norm=batch_norm,
-                dropout=dropout,
-                activation=activation,
-                flatten=flatten,
-                btm_sigma=sigma,
-                btm_lam=lam, 
-                top_sigma=top_sigma,
-                top_lam=top_lam)
-            models.append(model)
+        for i, input_dim in enumerate(input_dim_list):
+            if mus is None:
+                model = DualSTGModel(
+                    input_dim=input_dim, 
+                    output_dim=emb_dim,
+                    hidden_dims=hidden_dims,
+                    batch_norm=batch_norm,
+                    dropout=dropout,
+                    activation=activation,
+                    flatten=flatten,
+                    btm_sigma=sigma,
+                    btm_lam=lam, 
+                    top_sigma=top_sigma,
+                    top_lam=top_lam)
+                models.append(model)
+            else:
+                model = DualSTGModel(
+                    input_dim=input_dim, 
+                    output_dim=emb_dim,
+                    hidden_dims=hidden_dims,
+                    batch_norm=batch_norm,
+                    dropout=dropout,
+                    activation=activation,
+                    flatten=flatten,
+                    btm_sigma=sigma,
+                    btm_lam=lam, 
+                    top_sigma=top_sigma,
+                    top_lam=top_lam, 
+                    mu=mus[i])
+                models.append(model)
+
         top_model = nn.Sequential(
             nn.Linear(num_clients*emb_dim, 32), nn.ReLU(True), nn.Linear(32, output_dim), nn.Sigmoid()
         )
     return models, top_model
 
+
+
+
+
+
 def binary_acc(out, y):
     acc = accuracy_score(y, out>0.5)
     return acc
+
+
+
+
+
+
 
 def visualize_gate(z_list):
     full_z = np.concatenate(z_list)
@@ -107,16 +163,24 @@ def visualize_gate(z_list):
     return heatmap
 
 
+
+
+
+
+
+
+
+
 def train(
     models, top_model,
     train_loader, val_loader, test_loader,
     criterion=nn.BCELoss(),
-    optimizer ='SGD', lr = 1e-2,
-    epochs=100, freeze_btm_till=5, freeze_top_till=15,
+    optimizer ='Adam', lr = 1e-3,
+    epochs=100, freeze_btm_till=0, freeze_top_till=50,
     verbose=True, save_dir='Checkpoints/model.pt',
     log_dir='Logs/log.csv',
     save_mask_at=20, mask_dir='Mask/',
-    early_stopping=True, patience=10,
+    early_stopping=False, patience=20,
     noise_label=None):
 
 
@@ -165,6 +229,7 @@ def train(
             for i, item in enumerate(items):
                 data_x = item 
                 data_x = data_x.float().to(device)
+                # print(data_x.dtype)
                 emb = models[i](data_x)
                 embs.append(emb)
             embs = torch.cat(embs, dim=1)
@@ -281,6 +346,8 @@ def train(
                     all_label[all_label > 0] = 1
                     z_pred = np.concatenate(z_list)
                     z_pred = z_pred.reshape(z_pred.shape[0], )
+                    z_pred = z_pred >= 1e-5
+                    # print(z_pred, random_label)
                     assert len(z_pred) == len(random_label)
                     random_acc = accuracy_score(random_label, z_pred)
                     over_acc = accuracy_score(over_label, z_pred)
@@ -337,6 +404,8 @@ def train(
                     all_label[all_label > 0] = 1
                     z_pred = np.concatenate(btm_z_list)
                     z_pred = z_pred.reshape(z_pred.shape[0], )
+                    z_pred = z_pred >= 1e-5
+                    # print(z_pred, random_label)
                     assert len(z_pred) == len(random_label)
                     random_acc = accuracy_score(random_label, z_pred)
                     over_acc = accuracy_score(over_label, z_pred)
@@ -346,7 +415,7 @@ def train(
                     print("Random: {:.4f}, Over: {:.4f}, Short: {:.4f}, Total {:4f}".format(
                         random_acc, over_acc, short_acc, total_acc))
                     print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Val Acc {:.4f}, Test Acc: {:.4f}, Best Acc: {}, Num Feats: {:.4f}, Num Emb: {:.4f}".format(
-                        e, train_loss, train_acc, test_acc, best_acc, num_feats, num_emb))
+                        e, train_loss, train_acc, val_acc, test_acc, best_acc, num_feats, num_emb))
                     history.append([train_loss, train_acc, val_acc, test_acc, num_feats, num_emb, 
                         random_acc, over_acc, short_acc, total_acc])
                     column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats', 'num_emb',

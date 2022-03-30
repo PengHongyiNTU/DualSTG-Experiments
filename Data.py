@@ -17,17 +17,17 @@
   Primary Author: HONGYI001
 
 """
-from random import random
-from re import X
 from scipy.io import loadmat
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
-from sympy import re
+
 from torch.utils.data import Dataset, DataLoader
 from scipy.sparse import issparse
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from FeaturePoison import insert_feature_noise
+from Gini import gini_score_fast_old
+import torch
 
 
 # Modify This Class to Support More Dataset
@@ -35,7 +35,8 @@ from FeaturePoison import insert_feature_noise
 class VFLDataset(Dataset):
     def __init__(self, filename=None, data_source=None,
                     scale=True, num_clients=1, 
-                    feat_idxs=None, 
+                    feat_idxs=None,
+                    gini_portion=None, 
                     insert_noise=False, 
                     num_random_samples=10,
                     num_overwhelemd=5,
@@ -52,7 +53,7 @@ class VFLDataset(Dataset):
             self.num_random_samples = num_random_samples
             self.num_overwhelemd = num_overwhelemd
             self.num_shortcut = num_shortcut
-    
+        self.gini_portion = gini_portion
         self.num_clients = num_clients
         self.supported_datasets = {
             'BASEHOCK': "Data/BASEHOCK.mat",
@@ -87,6 +88,7 @@ class VFLDataset(Dataset):
                 test_size=test_size, 
                 seed=seed)
             X_train, X_test = X_train.values, X_test.values
+
         else:
             X_train, X_test, y_train, y_test = train_test_split(
                 data_X, data_y, test_size=test_size, random_state=seed)
@@ -99,16 +101,17 @@ class VFLDataset(Dataset):
         self.y_test = y_test
 
         self._permute_idx()
-
-
+    
 
         X_train, X_val, y_train, y_val = train_test_split(
             self.X_train, self.y_train, test_size=0.2,
             random_state=seed)
-        self.X_train = X_train
-        self.X_val = X_val
-        self.y_train = y_train
-        self.y_val = y_val
+        self.X_train = X_train.astype(np.float32)
+        self.X_test = X_test.astype(np.float32)
+        self.X_val = X_val.astype(np.float32)
+        self.y_train = y_train.astype(np.int64)
+        self.y_test = y_test.astype(np.int64)
+        self.y_val = y_val.astype(np.int64)
 
 
         # Distribute Dataset to multiple clients
@@ -121,8 +124,28 @@ class VFLDataset(Dataset):
         
         self.training = 'train'
         
-
     
+
+    def gini_filter(self):
+        X_train = torch.tensor(self.X_train)
+        # X_test = torch.tensor(self.X_test), 
+        y_train =  torch.tensor(self.y_train, dtype=torch.int64)
+        # print(y_train)
+        # y_test =  torch.tensor(self.y_test, dtype=torch.int64), 
+        gini_score = gini_score_fast_old(X_train, y_train)
+
+        indices = torch.argsort(gini_score)
+        # print(indices)
+        gini_label = np.zeros(indices.shape[0])
+        indices_left = indices[:int(indices.shape[0]*self.gini_portion)]
+        gini_label[indices_left] = 1
+        self.gini_label = gini_label
+        return gini_label
+
+
+    def get_feature_index_list(self):
+        return self.feat_idxs_list
+
     def get_input_dim_list(self):
         return self.input_dim_list
 
