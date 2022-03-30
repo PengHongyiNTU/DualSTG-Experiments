@@ -1,4 +1,4 @@
-from cv2 import log
+
 from scipy.io import loadmat
 from scipy.sparse import issparse
 import numpy as np
