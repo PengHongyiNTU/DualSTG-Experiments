@@ -3,7 +3,6 @@ from scipy.io import loadmat
 from scipy.sparse import issparse
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
-from sympy import E
 from Data import VFLDataset
 from torch.utils.data import DataLoader
 import VFL
