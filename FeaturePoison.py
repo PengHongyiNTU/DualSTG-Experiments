@@ -43,9 +43,11 @@ def insert_random_noise(
             X_noise["Noise-{}".format(i)] = rng.normal(0, noise_std, X.shape[0])
     else:
         for i in range(num_noise_features):
+            # print(X.shape[0])
+            # print(X_noise.shape[0])
+            # print(skewnorm.rvs(a=noise_skewness, size=X.shape[0]))
             X_noise["Skewed-Noise-{}".format(i)] = skewnorm.rvs(
-                a=noise_skewness, size=X.shape[0]
-            )
+                a=noise_skewness, size=X.shape[0])
             X_noise["Noise-{}".format(i)] = np.random.normal(0, noise_std, X.shape[0])
     # X_noise = pd.DataFrame(MinMaxScaler().fit_transform(X_noise), columns=X_noise.columns)
     return X_noise
@@ -114,6 +116,7 @@ def insert_feature_noise(X, y,
     p=0.3, test_size=0.2, 
     seed=0):
     warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
+    pd.set_option('mode.chained_assignment', None)
     X_noise = insert_random_noise(
         X, num_random_noise, noise_std, noise_skewness, noise_type, seed
     )

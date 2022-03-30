@@ -108,7 +108,7 @@ def visualize_gate(z_list):
 
 def train(
     models, top_model,
-    train_loader, test_loader, 
+    train_loader, val_loader, test_loader, 
     criterion=nn.BCELoss(),
     optimizer ='SGD', lr = 1e-2,
     epochs=100, freeze_btm_till=5, freeze_top_till=15,
@@ -117,7 +117,10 @@ def train(
     save_mask_at=20, mask_dir='Mask/'):
     history = []
     column_names = []
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu', 
+    early_stopping=False, patience=10)
+    
+    
     best_acc = 0
     for e in range(1, epochs+1):
         if isinstance(models[0], DualSTGModel) or isinstance(models[0], STGEmbModel):
@@ -163,6 +166,7 @@ def train(
             embs = torch.cat(embs, dim=1)
             pred = top_model(embs)
             loss = criterion(pred, data_y)
+            
             if isinstance(models[0], DualSTGModel) or isinstance(models[0], STGEmbModel):
                 reg_loss_list = [model.get_reg_loss() for model in models]
                 reg_loss = torch.mean(torch.stack(reg_loss_list))

@@ -17,36 +17,131 @@
   Primary Author: HONGYI001
 
 """
+from random import random
+from re import X
 from scipy.io import loadmat
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from sympy import re
 from torch.utils.data import Dataset, DataLoader
 from scipy.sparse import issparse
-
-
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from FeaturePoison import insert_feature_noise
 
 
 # Modify This Class to Support More Dataset
-
+# Alternatively, One can also input numpy dataset 
 class VFLDataset(Dataset):
-    def __init__(self, filename, scale=True, num_clients=1, feat_idxs=None):
+    def __init__(self, filename=None, data_source=None,
+                    scale=True, num_clients=1, 
+                    feat_idxs=None, 
+                    insert_noise=False, 
+                    num_random_samples=10,
+                    num_overwhelemd=5,
+                    num_shortcut=5, 
+                    noise_std=0.1,
+                    noise_skewness=3,
+                    noise_type="both",
+                    noise_lambda_range=(0, 5), 
+                    coefficient_range=(-10, 10),
+                    p=0.3, test_size=0.2, 
+                    seed=0):
+        self.insert_noise = insert_noise
+        if insert_noise:
+            self.num_random_samples = num_random_samples
+            self.num_overwhelemd = num_overwhelemd
+            self.num_shortcut = num_shortcut
+    
         self.num_clients = num_clients
-        print(f'Trying to load the datasets from {filename}')
-        if filename == "BASEHOCK":
-            filename = "Data/BASEHOCK.mat"
-        if filename == "PCMAC":
-            filename = "Data/PCMAC.mat"
-        data_X, data_y, feat_idx_list = self._load_and_split(filename, 
-            scale, num_clients, feat_idxs)
-        self.data_X = data_X
-        self.data_y = data_y
-        self.feat_idxs_list = feat_idx_list
-        self.input_dim_list = [len(idx) for idx in feat_idx_list]
+        self.supported_datasets = {
+            'BASEHOCK': "Data/BASEHOCK.mat",
+            "PCMAC": "Data/PCMAC.mat"
+        }
+        if filename in list(self.supported_datasets.keys()):
+            print(f'Trying to load the datasets from {filename}')
+            filename = self.supported_datasets[filename]
+            data_X, data_y = self._load(filename, scale)
+        # Else Requiring Numpy Dataset
+        # Data source: (X:numpy array, y:numpy array)
+        elif filename is None and data_source is not None:
+            data_X = data_source[0]
+            data_y = data_source[1]
+            data_X = data_X.astype(np.float32)
+            data_y = data_y.astype(np.int64)
+        if insert_noise:
+            print(f'Inserting : {num_random_samples} Random Samples, {num_overwhelemd} Overwhelmed Samples, {num_shortcut} Shortcut Samples')
+            data_X = pd.DataFrame(data_X)
+            # print(data_X)
+            # print(data_y)
+            X_train, X_test, y_train, y_test = insert_feature_noise(
+                data_X, data_y, 
+                num_random_noise=num_random_samples, 
+                num_overwhelemed=num_overwhelemd, 
+                num_shortcut=num_shortcut,
+                noise_std=noise_std,
+                noise_skewness=noise_skewness,
+                noise_type=noise_type, 
+                noise_lambda_range=noise_lambda_range,
+                coefficient_range=coefficient_range, p=p, 
+                test_size=test_size, 
+                seed=seed)
+            X_train, X_test = X_train.values, X_test.values
+        else:
+            X_train, X_test, y_train, y_test = train_test_split(
+                data_X, data_y, test_size=test_size, random_state=seed)
+
+        self.X_train = X_train
+        self.X_test = X_test
+        # print(X_train.shape)
+        # print(X_test.shape)
+        self.y_train = y_train
+        self.y_test = y_test
+
+        self._permute_idx()
+
+        # Distribute Dataset to multiple clients
+        # data_X, data_y, feat_idx_list = self._load_and_split(filename, 
+        # scale, num_clients, feat_idxs)
+        feat_idxs_list = self._split(self.X_train, 
+            self.y_train, num_clients, feat_idxs)
+        self.feat_idxs_list = feat_idxs_list
+        self.input_dim_list = [len(idx) for idx in feat_idxs_list]
+        self.training = True
     
     def get_input_dim_list(self):
         return self.input_dim_list
 
-    def _load_and_split(self, filename, scale, num_clients, feat_idxs):   
+    def _permute_idx(self):
+        assert self.X_train.shape[1] == self.X_test.shape[1]
+        idx = np.arange(self.X_train.shape[1])
+        p = np.random.permutation(idx)
+        if self.insert_noise:
+            shortcut_label = np.zeros(self.X_train.shape[1])
+            shortcut_label[-self.num_shortcut:] = 1
+            overwhelmed_label = np.zeros(self.X_train.shape[1])
+            overwhelmed_label[-self.num_shortcut-self.num_overwhelemd:-self.num_shortcut] = 1
+            random_noise_label = np.zeros(self.X_train.shape[1])
+            random_noise_label[-self.num_shortcut-self.num_overwhelemd-self.num_random_samples:-self.num_shortcut-self.num_overwhelemd] = 1
+            self.shorcut_label = shortcut_label[p]
+            self.overwhelmed_label = overwhelmed_label[p]
+            self.random_noise_label = random_noise_label[p]
+        self.X_train, self.X_test = self.X_train[:, p], self.X_test[:, p]
+
+
+    def get_inserted_features_label(self):
+        if self.insert_noise:
+            return self.random_noise_label, self.shorcut_label, self.overwhelmed_label, 
+
+    def test(self):
+        self.training = False
+        return self
+    
+    def train(self):
+        self.training = True
+        return self
+
+    def _load(self, filename, scale):   
         try:
             data_mat = loadmat(filename)
             data_X = data_mat['X']
@@ -60,10 +155,13 @@ class VFLDataset(Dataset):
             if scale:
                 scaler = MinMaxScaler()
                 data_X = scaler.fit_transform(data_X)
+            return data_X, data_y
         except FileNotFoundError:
             return None
+
+    def _split(self, X, y, num_clients, feat_idxs):
         if feat_idxs is None:
-            feat_dim = data_X.shape[1]
+            feat_dim = X.shape[1]
             feat_idxs_list = np.array_split(
                 np.arange(feat_dim), num_clients+1)
             for i, feat_idx in enumerate(feat_idxs_list[:-1]):
@@ -83,20 +181,30 @@ class VFLDataset(Dataset):
             feat_idxs_list.append(np.arange(feat_dim)[start:])
             print(f'Server : Feature Index {start}-{feat_dim}')
         assert len(feat_idxs_list) == num_clients+1
-        return data_X, data_y, feat_idxs_list
+        return feat_idxs_list
     
 
     def __len__(self):
-        return self.data_X.shape[0]
+        if self.training:
+            return self.X_train.shape[0]
+        else:
+            return self.X_test.shape[0]
 
     def __getitem__(self, idx):
+        if self.training:
+            X = self.X_train
+            y = self.y_train
+        else:
+            X = self.X_test
+            y = self.y_test
         items = []
         for i in range(self.num_clients+1):
-            item = (self.data_X[idx, self.feat_idxs_list[i]])
+            item = (X[idx, self.feat_idxs_list[i]])
             items.append(item)
-        return items, self.data_y[idx]
+        return items, y[idx]
     
 
+"""
 def prepare_data(
     filename, scale=True, num_clients=1, feat_idx=None, 
     train_batch=128, eval_batch=1000, shuffle=False
@@ -104,10 +212,41 @@ def prepare_data(
     dataset = VFLDataset(filename, scale, num_clients, feat_idx)
     input_dim_list = dataset.get_input_dim_list()
     train_loader = DataLoader(dataset, batch_size=train_batch, shuffle=shuffle)
-    test_loader = DataLoader(dataset, batch_size=eval_batch, shuffle=False)
+    test_loader = DataLoader(dataset.test(), batch_size=eval_batch, shuffle=False)
     return train_loader, test_loader, input_dim_list
+"""
 
 
 if __name__ == "__main__":
-    train_loader, test_loader, input_dim_list  = prepare_data("BASEHOCK", scale=True, num_clients=2)
-    print(next(iter(train_loader)))
+    print('Test Dataset Class')
+    dataset = VFLDataset(
+        "BASEHOCK", scale=True, num_clients=3, feat_idxs=None
+    )
+    train_loader = DataLoader(dataset, batch_size=128, shuffle=True)
+    test_loader = DataLoader(dataset.test(), batch_size=1000, shuffle=False)
+    print(next(iter(train_loader))[0][0].shape)
+    print(next(iter(test_loader))[0][0].shape)
+    dataset = VFLDataset(
+        "BASEHOCK", scale=True, num_clients=3, feat_idxs=None,
+        insert_noise=True
+    )
+    train_loader = DataLoader(dataset, batch_size=128, shuffle=True)
+    test_loader = DataLoader(dataset.test(), batch_size=1000, shuffle=False)
+    random_label, over_label, shortcut_label = dataset.get_inserted_features_label()
+    print(next(iter(train_loader))[0][0].shape)
+    print(next(iter(test_loader))[0][0].shape)
+    print(np.count_nonzero(random_label))
+    print(np.count_nonzero(over_label))
+    print(np.count_nonzero(shortcut_label))
+    dataset = VFLDataset(
+        data_source=(np.random.randn(1000, 500), np.concatenate((np.ones(500), np.zeros(500)))),
+        scale=True, num_clients=3, feat_idxs=None, insert_noise=True
+    )
+    train_loader = DataLoader(dataset, batch_size=128, shuffle=True)
+    test_loader = DataLoader(dataset.test(), batch_size=1000, shuffle=False)
+    random_label, over_label, shortcut_label = dataset.get_inserted_features_label()
+    print(next(iter(train_loader))[0][0].shape)
+    print(next(iter(test_loader))[0][0].shape)
+    print(np.count_nonzero(random_label))
+    print(np.count_nonzero(over_label))
+    print(np.count_nonzero(shortcut_label))
