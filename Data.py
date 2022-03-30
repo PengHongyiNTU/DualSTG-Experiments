@@ -30,6 +30,7 @@ from Gini import gini_score_fast_old
 import torch
 
 
+
 # Modify This Class to Support More Dataset
 # Alternatively, One can also input numpy dataset 
 class VFLDataset(Dataset):
@@ -126,7 +127,7 @@ class VFLDataset(Dataset):
         
     
 
-    def gini_filter(self):
+    def gini_filter(self, gini_portion):
         X_train = torch.tensor(self.X_train)
         # X_test = torch.tensor(self.X_test), 
         y_train =  torch.tensor(self.y_train, dtype=torch.int64)
@@ -137,7 +138,7 @@ class VFLDataset(Dataset):
         indices = torch.argsort(gini_score)
         # print(indices)
         gini_label = np.zeros(indices.shape[0])
-        indices_left = indices[:int(indices.shape[0]*self.gini_portion)]
+        indices_left = indices[:int(indices.shape[0]*gini_portion)]
         gini_label[indices_left] = 1
         self.gini_label = gini_label
         return gini_label
@@ -154,12 +155,16 @@ class VFLDataset(Dataset):
         idx = np.arange(self.X_train.shape[1])
         p = np.random.permutation(idx)
         if self.insert_noise:
-            shortcut_label = np.zeros(self.X_train.shape[1])
-            shortcut_label[-self.num_shortcut:] = 1
-            overwhelmed_label = np.zeros(self.X_train.shape[1])
-            overwhelmed_label[-self.num_shortcut-self.num_overwhelemd:-self.num_shortcut] = 1
-            random_noise_label = np.zeros(self.X_train.shape[1])
-            random_noise_label[-self.num_shortcut-self.num_overwhelemd-self.num_random_samples:-self.num_shortcut-self.num_overwhelemd] = 1
+            shortcut_label = np.ones(self.X_train.shape[1])
+            if self.num_shortcut > 0:
+                shortcut_label[p[:self.num_shortcut]] = 0
+            overwhelmed_label = np.ones(self.X_train.shape[1])
+            if self.num_overwhelemd > 0 and self.num_shortcut > 0:
+                overwhelmed_label[-self.num_shortcut-self.num_overwhelemd:-self.num_shortcut] = 0
+
+            random_noise_label = np.ones(self.X_train.shape[1])
+            if self.num_shortcut > 0 and self.num_overwhelemd > 0 and self.num_random_samples > 0:
+                random_noise_label[-self.num_shortcut-self.num_overwhelemd-self.num_random_samples:-self.num_shortcut-self.num_overwhelemd] = 1
             self.shorcut_label = shortcut_label[p]
             self.overwhelmed_label = overwhelmed_label[p]
             self.random_noise_label = random_noise_label[p]

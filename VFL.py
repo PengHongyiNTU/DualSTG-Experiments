@@ -64,8 +64,8 @@ def make_binary_models(
             )
             models.append(model)
         top_model = nn.Sequential(
-            nn.Linear(num_clients*emb_dim, 32), nn.ReLU(True), nn.Linear(32, output_dim), nn.Sigmoid()
-        )
+            nn.Linear(num_clients*emb_dim, 32), nn.ReLU(True), nn.Linear(32, output_dim))
+    
     elif type == 'STG':
         for i, input_dim in enumerate(input_dim_list):
             if mus is None:
@@ -96,8 +96,7 @@ def make_binary_models(
                 
 
         top_model = nn.Sequential(
-            nn.Linear(num_clients*emb_dim, 32), nn.ReLU(True), nn.Linear(32, output_dim), nn.Sigmoid()
-        )
+            nn.Linear(num_clients*emb_dim, 32), nn.ReLU(True), nn.Linear(32, output_dim))
 
     elif type == 'DualSTG':
         for i, input_dim in enumerate(input_dim_list):
@@ -131,9 +130,8 @@ def make_binary_models(
                     mu=mus[i])
                 models.append(model)
 
-        top_model = nn.Sequential(
-            nn.Linear(num_clients*emb_dim, 32), nn.ReLU(True), nn.Linear(32, output_dim), nn.Sigmoid()
-        )
+        top_model = nn.Sequential(nn.Linear(num_clients*emb_dim, 32), nn.ReLU(True), nn.Linear(32, output_dim))
+
     return models, top_model
 
 
@@ -144,7 +142,6 @@ def make_binary_models(
 def binary_acc(out, y):
     acc = accuracy_score(y, out>0.5)
     return acc
-
 
 
 
@@ -174,8 +171,8 @@ def visualize_gate(z_list):
 def train(
     models, top_model,
     train_loader, val_loader, test_loader,
-    criterion=nn.BCELoss(),
-    optimizer ='Adam', lr = 1e-3,
+    criterion=nn.CrossEntropyLoss(),
+    optimizer ='Adam', lr = 1e-2,
     epochs=100, freeze_btm_till=0, freeze_top_till=50,
     verbose=True, save_dir='Checkpoints/model.pt',
     log_dir='Logs/log.csv',
@@ -187,6 +184,7 @@ def train(
     history = []
     column_names = []
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    #device = torch.device('cpu')
     best_acc = 0
 
     for e in range(1, epochs+1):
@@ -222,28 +220,39 @@ def train(
             optimizer = torch.optim.SGD(
                 parameters, lr=lr)
         for items, data_y in train_loader:
+            
             optimizer.zero_grad()
             assert len(items) == len(models)
             embs = []
-            data_y = data_y.float().to(device).view(-1, 1)
+            # data_y = data_y.float().to(device).view(-1, 1)
+            data_y = data_y.flatten().long().to(device)    
+            data_y.to(device) 
             for i, item in enumerate(items):
                 data_x = item 
                 data_x = data_x.float().to(device)
+    
                 # print(data_x.dtype)
                 emb = models[i](data_x)
                 embs.append(emb)
             embs = torch.cat(embs, dim=1)
             pred = top_model(embs)
+            #pred = torch.max(pred)
+
+            # print(pred.shape)
+            # print(data_y.shape)
+         
             loss = criterion(pred, data_y)
-            
             if isinstance(models[0], DualSTGModel) or isinstance(models[0], STGEmbModel):
                 reg_loss_list = [model.get_reg_loss() for model in models]
                 reg_loss = torch.mean(torch.stack(reg_loss_list))
                 loss += reg_loss
+            
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
-            train_acc += binary_acc(pred.detach().cpu().numpy(), data_y.cpu().numpy())
+            y_pred = torch.max(pred, 1)[1]
+        
+            train_acc += accuracy_score(data_y.cpu().numpy(), y_pred.detach().cpu().numpy(),)
         
 
         ##################################
@@ -256,7 +265,8 @@ def train(
             for items, data_y in val_loader:
                 assert len(items) == len(models)
                 embs = []
-                data_y = data_y.float().to(device).view(-1, 1)
+                # data_y = data_y.float().to(device).view(-1, 1)
+                data_y = data_y.flatten().long().to(device)
                 for i, item in enumerate(items):
                     data_x = item 
                     data_x = data_x.float().to(device)
@@ -264,7 +274,9 @@ def train(
                     embs.append(emb)
                 embs = torch.cat(embs, dim=1)
                 pred = top_model(embs)
-                val_acc += binary_acc(pred.detach().cpu().numpy(), data_y.cpu().numpy())
+                y_pred = torch.max(pred, 1)[1]
+                
+                val_acc += accuracy_score(data_y.cpu().numpy(), y_pred.detach().cpu().numpy(),)
 
 
 
@@ -278,7 +290,8 @@ def train(
             for items, data_y in test_loader:
                 assert len(items) == len(models)
                 embs = []
-                data_y = data_y.float().to(device).view(-1, 1)
+                # data_y = data_y.float().to(device).view(-1, 1)
+                data_y = data_y.flatten().long().to(device)
                 for i, item in enumerate(items):
                     data_x = item 
                     data_x = data_x.float().to(device)
@@ -286,7 +299,10 @@ def train(
                     embs.append(emb)
                 embs = torch.cat(embs, dim=1)
                 pred = top_model(embs)
-                test_acc += binary_acc(pred.detach().cpu().numpy(), data_y.cpu().numpy())
+                y_pred = torch.max(pred, 1)[1]
+                test_acc += accuracy_score(data_y.cpu().numpy(), y_pred.detach().cpu().numpy(),)
+
+
 
         ##################################
         ###### Save model ################
