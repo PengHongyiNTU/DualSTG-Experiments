@@ -34,7 +34,7 @@ def initialize_mu(gini_labels, feat_idx_list):
     mus = []
     for i in range(len(feat_idx_list)):
         gini_label = np.array(gini_labels[feat_idx_list[i]])
-        mu = np.where(gini_label==1, 0.5, -0.5)
+        mu = np.where(gini_label==1, 0.4, -0.4)
         # print(mu)
         mu = torch.tensor(mu, dtype=torch.float32)
         mus.append(mu)
@@ -172,17 +172,17 @@ def train(
     train_loader, val_loader, test_loader,
     criterion=nn.CrossEntropyLoss(),
     optimizer ='Adam', lr = 1e-2,
-    epochs=100, freeze_btm_till=0, freeze_top_till=50,
+    epochs=100, freeze_btm_till=0, freeze_top_till=20,
     verbose=True, save_dir='Checkpoints/model.pt',
     log_dir='Logs/log.csv',
     save_mask_at=20, mask_dir='Mask/',
     early_stopping=False, patience=20,
-    noise_label=None):
+    noise_label=None, device='cpu'):
 
 
     history = []
     column_names = []
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = device
     #device = torch.device('cpu')
     best_acc = 0
 
@@ -314,7 +314,7 @@ def train(
         if early_stopping:
             if val_acc > best_acc:
                 best_acc = val_acc
-                torch.save(models, save_dir)
+                # torch.save(models, save_dir)
                 patience = 10
             else:
                 patience -= 1
@@ -324,7 +324,7 @@ def train(
         
         if val_acc > best_acc:
             best_acc = val_acc
-            torch.save(models, save_dir)
+            # torch.save(models, save_dir)
 
         ##################################
         ###### Logging ###################

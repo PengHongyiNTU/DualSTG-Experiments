@@ -11,8 +11,8 @@ import os
 
 
 DIR = "Data"
-file_names = os.listdir(DIR)
-# file_names = ['COIL20.mat']
+# file_names = os.listdir(DIR)
+file_names = ['RELATHE.mat']
 for file_name in file_names:
     if file_name.endswith(".mat"):
         mat = loadmat(os.path.join(DIR, file_name))
@@ -27,7 +27,7 @@ for file_name in file_names:
         if file_name in ['BASEHOCK.mat', 'RELATHE.mat', 'PCMAC.mat']:
             y[np.where(y == 1)] = 0
             y[np.where(y == 2)] = 1
-        if file_name in ['COIL20.mat', 'Isolet.mat.mat']:
+        if file_name in ['COIL20.mat', 'isolet.mat']:
             y = y-1
         scaler = MinMaxScaler()
         X = scaler.fit_transform(X)
@@ -40,13 +40,13 @@ for file_name in file_names:
 
         EPOCH = 100
         NUM_TRAIL = 5
-        NUM_NORMAL = np.arange(0, 100, 5)
-        NUM_OVERWHELMED = [0]+[5]*(len(NUM_NORMAL)-1)
-        NUM_SHORTCUT = [0, 1, 2, 3]
-        NUM_SHORTCUT = np.repeat(np.array(NUM_SHORTCUT), 5)
+        NUM_NORMAL = np.arange(0, 200, 20)
+        NUM_OVERWHELMED = [0]+[20]*(len(NUM_NORMAL)-1)
+        NUM_SHORTCUT = [0, 0, 5, 5, 10, 10, 15, 15, 20, 20]
+        # NUM_SHORTCUT = np.repeat(np.array(NUM_SHORTCUT), 5)
         assert len(NUM_NORMAL) == len(NUM_OVERWHELMED) == len(NUM_SHORTCUT)
 
-        for trail in range(NUM_TRAIL):
+        for trail in range(1):
             for i, num_normal in enumerate(NUM_NORMAL):
                 num_over = NUM_OVERWHELMED[i]
                 num_shortcut = NUM_SHORTCUT[i]
@@ -78,7 +78,7 @@ for file_name in file_names:
                 # FNN Model
                 ############################
                 print("FNN Model")
-                saving_name = f'FNN_Name_{name}_Trail_{trail}_Normal_{num_normal}_Overwhelmed_{num_over}_Shortcut_{num_shortcut}'
+                saving_name = f'FNN_N_{name}_T_{trail}_N_{num_normal}_O_{num_over}_S_{num_shortcut}'
         
                 output_dim = np.unique(y).size
                 criterion = torch.nn.CrossEntropyLoss()
@@ -106,7 +106,7 @@ for file_name in file_names:
                 ############################
                 print("STG")
                 type = 'STG'
-                saving_name = f'STG_Name_{name}_Trail_{trail}_Normal_{num_normal}_Overwhelmed_{num_over}_Shortcut_{num_shortcut}'
+                saving_name = f'STG_N_{name}_T_{trail}_N_{num_normal}_O_{num_over}_S_{num_shortcut}'
                 models, top_model = VFL.make_binary_models(
                     input_dim_list=input_dim_list,
                     type='STG',
@@ -131,7 +131,7 @@ for file_name in file_names:
                 ###########################
                 print("Dual-STG")
                 type = 'Dual-STG'
-                saving_name = f'Dual-STG_Name_{name}_Trail_{trail}_Normal_{num_normal}_Overwhelmed_{num_over}_Shortcut_{num_shortcut}'
+                saving_name = f'DualSTG_N_{name}_T_{trail}_N_{num_normal}_O_{num_over}_S_{num_shortcut}'
             
                 models, top_model = VFL.make_binary_models(
                     input_dim_list=input_dim_list,
@@ -156,7 +156,7 @@ for file_name in file_names:
                 ###########################
                 print("STG with GINI Initialization")
                 type = 'STG-GINI'
-                saving_name = f'STG-GINI_Name_{name}_Trail_{trail}_Normal_{num_normal}_Overwhelmed_{num_over}_Shortcut_{num_shortcut}'
+                saving_name = f'STG-GINI_N_{name}_T_{trail}_N_{num_normal}_O_{num_over}_S_{num_shortcut}'
                 gini_labels = dataset.gini_filter(0.5)
                 feat_idx_list = dataset.get_feature_index_list()
                 mus = VFL.initialize_mu(gini_labels, feat_idx_list)
@@ -180,7 +180,7 @@ for file_name in file_names:
                 #########################   
                 print('Dual-STG with GINI Initialization Model')
                 type = 'Dual-STG-GINI'
-                saving_name = f'Dual-STG-GINI_Name_{name}_Trail_{trail}_Normal_{num_normal}_Overwhelmed_{num_over}_Shortcut_{num_shortcut}'
+                saving_name = f'DualSTG-GINI_N_{name}_T_{trail}_N_{num_normal}_O_{num_over}_S_{num_shortcut}'
                 gini_labels = dataset.gini_filter(0.5)
                 feat_idx_list = dataset.get_feature_index_list()
                 mus = VFL.initialize_mu(gini_labels, feat_idx_list)
@@ -197,8 +197,10 @@ for file_name in file_names:
                     save_dir=os.path.join(result_dir, saving_name)+".pt",
                     log_dir=os.path.join(result_dir, saving_name)+".csv",
                     save_mask_at=100000,
-                    noise_label=noisy_label)        
-
+                    noise_label=noisy_label)   
+           
+              
+       
 
 
 

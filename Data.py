@@ -17,6 +17,7 @@
   Primary Author: HONGYI001
 
 """
+from re import I
 from scipy.io import loadmat
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
@@ -47,8 +48,10 @@ class VFLDataset(Dataset):
                     noise_type="both",
                     noise_lambda_range=(0, 5), 
                     coefficient_range=(-10, 10),
-                    p=0.3, test_size=0.2, 
+                    p=0.3, test_size=0.2,
+                    permute=True, 
                     seed=0):
+        self.permute = permute
         self.insert_noise = insert_noise
         if insert_noise:
             self.num_random_samples = num_random_samples
@@ -101,7 +104,8 @@ class VFLDataset(Dataset):
         self.y_train = y_train
         self.y_test = y_test
 
-        self._permute_idx()
+        if self.permute:
+            self._permute_idx()
     
 
         X_train, X_val, y_train, y_val = train_test_split(
@@ -138,7 +142,11 @@ class VFLDataset(Dataset):
         indices = torch.argsort(gini_score)
         # print(indices)
         gini_label = np.zeros(indices.shape[0])
-        indices_left = indices[:int(indices.shape[0]*gini_portion)]
+        if isinstance(gini_portion, float):
+            indices_left = indices[:int(indices.shape[0]*gini_portion)]
+        else: 
+            indices_left = indices[:gini_portion]
+            
         gini_label[indices_left] = 1
         self.gini_label = gini_label
         return gini_label
