@@ -1,3 +1,22 @@
+"""
+======================= START OF LICENSE NOTICE =======================
+  Copyright (C) 2022 HONGYI001. All Rights Reserved
+
+  NO WARRANTY. THE PRODUCT IS PROVIDED BY DEVELOPER "AS IS" AND ANY
+  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL DEVELOPER BE LIABLE FOR
+  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+  GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+  IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THE PRODUCT, EVEN
+  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+======================== END OF LICENSE NOTICE ========================
+  Primary Author: HONGYI001
+
+"""
 
 from scipy.io import loadmat
 from scipy.sparse import issparse
@@ -19,7 +38,7 @@ for file_name in file_names:
         X = mat["X"]
         y = mat["Y"]
         if issparse(X):
-                data_X = data_X.todense()
+                X = X.todense()
         y = y.flatten()
         print(file_name, X.shape, y.shape)
         if file_name in ['madelon.mat', 'arcene.mat', 'gisette.mat']:

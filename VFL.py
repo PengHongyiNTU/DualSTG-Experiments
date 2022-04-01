@@ -213,8 +213,14 @@ def train(
         parameters = list(itertools.chain(*parameters))
         
         if optimizer == "Adam":
-            optimizer = torch.optim.Adam(
-               parameters, lr=lr)
+            if isinstance(models[0], FNNModel):
+                optimizer = torch.optim.Adam(
+                    parameters, lr=0.1*lr)
+            else:
+                optimizer = torch.optim.Adam(
+                    parameters, lr=lr)    
+        
+        
         elif optimizer == "SGD":
             optimizer = torch.optim.SGD(
                 parameters, lr=lr)
