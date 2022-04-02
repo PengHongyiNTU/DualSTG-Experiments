@@ -26,7 +26,7 @@ from torch.utils.data import Dataset, DataLoader
 from scipy.sparse import issparse
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from FeaturePoison import insert_feature_noise
+from FeaturePoisonFast import insert_feature_noise
 from Gini import gini_score_fast_old
 import torch
 
@@ -41,21 +41,21 @@ class VFLDataset(Dataset):
                     gini_portion=None, 
                     insert_noise=False, 
                     num_random_samples=10,
-                    num_overwhelemd=5,
+                    num_overwhelmed=5,
                     num_shortcut=5, 
                     noise_std=0.1,
                     noise_skewness=3,
                     noise_type="both",
                     noise_lambda_range=(0, 5), 
                     coefficient_range=(-10, 10),
-                    p=0.3, test_size=0.2,
+                    p=0.4, test_size=0.5,
                     permute=True, 
                     seed=0):
         self.permute = permute
         self.insert_noise = insert_noise
         if insert_noise:
             self.num_random_samples = num_random_samples
-            self.num_overwhelemd = num_overwhelemd
+            self.num_overwhelmed = num_overwhelmed
             self.num_shortcut = num_shortcut
         self.gini_portion = gini_portion
         self.num_clients = num_clients
@@ -75,14 +75,14 @@ class VFLDataset(Dataset):
             data_X = data_X.astype(np.float32)
             data_y = data_y.astype(np.int64)
         if insert_noise:
-            print(f'Inserting : {num_random_samples} Random Samples, {num_overwhelemd} Overwhelmed Samples, {num_shortcut} Shortcut Samples')
+            print(f'Inserting : {num_random_samples} Random Samples, {num_overwhelmed} Overwhelmed Samples, {num_shortcut} Shortcut Samples')
             data_X = pd.DataFrame(data_X)
             # print(data_X)
             # print(data_y)
             X_train, X_test, y_train, y_test = insert_feature_noise(
                 data_X, data_y, 
                 num_random_noise=num_random_samples, 
-                num_overwhelemed=num_overwhelemd, 
+                num_overwhelmed=num_overwhelmed, 
                 num_shortcut=num_shortcut,
                 noise_std=noise_std,
                 noise_skewness=noise_skewness,
@@ -91,7 +91,7 @@ class VFLDataset(Dataset):
                 coefficient_range=coefficient_range, p=p, 
                 test_size=test_size, 
                 seed=seed)
-            X_train, X_test = X_train.values, X_test.values
+            # X_train, X_test = X_train.values, X_test.values
 
         else:
             X_train, X_test, y_train, y_test = train_test_split(
@@ -117,6 +117,9 @@ class VFLDataset(Dataset):
         self.y_train = y_train.astype(np.int64)
         self.y_test = y_test.astype(np.int64)
         self.y_val = y_val.astype(np.int64)
+        self.X = np.concatenate([X_train, X_val, X_test])
+        self.y = np.concatenate([y_train, y_val, y_test])
+
 
 
         # Distribute Dataset to multiple clients
@@ -130,6 +133,9 @@ class VFLDataset(Dataset):
         self.training = 'train'
         
     
+    def get_data(self):
+        return self.X, self.y
+
 
     def gini_filter(self, gini_portion):
         X_train = torch.tensor(self.X_train)
@@ -167,12 +173,12 @@ class VFLDataset(Dataset):
             if self.num_shortcut > 0:
                 shortcut_label[p[:self.num_shortcut]] = 0
             overwhelmed_label = np.ones(self.X_train.shape[1])
-            if self.num_overwhelemd > 0 and self.num_shortcut > 0:
-                overwhelmed_label[-self.num_shortcut-self.num_overwhelemd:-self.num_shortcut] = 0
+            if self.num_overwhelmed > 0 and self.num_shortcut > 0:
+                overwhelmed_label[-self.num_shortcut-self.num_overwhelmed:-self.num_shortcut] = 0
 
             random_noise_label = np.ones(self.X_train.shape[1])
-            if self.num_shortcut > 0 and self.num_overwhelemd > 0 and self.num_random_samples > 0:
-                random_noise_label[-self.num_shortcut-self.num_overwhelemd-self.num_random_samples:-self.num_shortcut-self.num_overwhelemd] = 1
+            if self.num_shortcut > 0 and self.num_overwhelmed > 0 and self.num_random_samples > 0:
+                random_noise_label[-self.num_shortcut-self.num_overwhelmed-self.num_random_samples:-self.num_shortcut-self.num_overwhelmed] = 1
             self.shorcut_label = shortcut_label[p]
             self.overwhelmed_label = overwhelmed_label[p]
             self.random_noise_label = random_noise_label[p]

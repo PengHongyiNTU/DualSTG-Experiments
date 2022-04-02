@@ -338,122 +338,126 @@ def train(
     
 
 
-        if verbose:
-            if isinstance(models[0], FNNModel):
+        
+        if isinstance(models[0], FNNModel):
+            if verbose:    
                 print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Val Acc {:.4f}, Test Acc: {:.4f}, Best Acc: {:.4f}".format(
                     e, train_loss, train_acc, val_acc, test_acc, best_acc))
-                history.append([train_loss, train_acc, val_acc, test_acc])
-                column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc']
+            history.append([train_loss, train_acc, val_acc, test_acc])
+            column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc']
             
-            elif isinstance(models[0], STGEmbModel):
-                z_list = []
-                num_feats = []
-                for model in models:
-                    z, num_feat = model.get_gates()
-                    z_list.append(z)
-                    num_feats.append(num_feat)
-                num_feats = sum(num_feats)
+        elif isinstance(models[0], STGEmbModel):
+            z_list = []
+            num_feats = []
+            for model in models:
+                z, num_feat = model.get_gates()
+                z_list.append(z)
+                num_feats.append(num_feat)
+            num_feats = sum(num_feats)
                
                 
-                if e%save_mask_at == 0:
-                    z_heat_map = visualize_gate(z_list)
-                    z_heat_map.figure.suptitle('Feature Gates')
-                    z_heat_map.figure.savefig(mask_dir + 
-                        'STG_gates_{}.png'.format(e))
+            if e%save_mask_at == 0:
+                z_heat_map = visualize_gate(z_list)
+                z_heat_map.figure.suptitle('Feature Gates')
+                z_heat_map.figure.savefig(mask_dir + 
+                    'STG_gates_{}.png'.format(e))
 
-                if noise_label is not None:
-                    random_label, over_label, short_label = noise_label
-                    all_label = random_label + over_label + short_label
-                    all_label[all_label > 0] = 1
-                    z_pred = np.concatenate(z_list)
-                    z_pred = z_pred.reshape(z_pred.shape[0], )
-                    z_pred = z_pred >= 1e-5
+            if noise_label is not None:
+                random_label, over_label, short_label = noise_label
+                all_label = random_label + over_label + short_label
+                all_label[all_label > 0] = 1
+                z_pred = np.concatenate(z_list)
+                z_pred = z_pred.reshape(z_pred.shape[0], )
+                z_pred = z_pred >= 1e-5
                     # print(z_pred, random_label)
-                    assert len(z_pred) == len(random_label)
-                    random_acc = accuracy_score(random_label, z_pred)
-                    over_acc = accuracy_score(over_label, z_pred)
-                    short_acc = accuracy_score(short_label, z_pred)
-                    total_acc = accuracy_score(all_label, z_pred)
-            
+                assert len(z_pred) == len(random_label)
+                random_acc = accuracy_score(random_label, z_pred)
+                over_acc = accuracy_score(over_label, z_pred)
+                short_acc = accuracy_score(short_label, z_pred)
+                total_acc = accuracy_score(all_label, z_pred)
+
+                if verbose:
                     print("Random: {:.4f}, Over: {:.4f}, Short: {:.4f}, Total {:4f}".format(
                         random_acc, over_acc, short_acc, total_acc))
                     print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Val Acc {:.4f}, Test Acc: {:.4f}, Best Acc: {}, Num Feats: {:.4f}".format(
                         e, train_loss, train_acc, val_acc, test_acc, best_acc, num_feats))
-                    history.append([train_loss, train_acc, val_acc, test_acc, num_feats, 
+                history.append([train_loss, train_acc, val_acc, test_acc, num_feats, 
                         random_acc, over_acc, short_acc, total_acc])
-                    column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats',
+                column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats',
                         'random_acc', 'over_acc', 'short_acc', 'total_acc']
                 
-                else:
+            else:
+                if verbose:
                     print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Val Acc {:.4f}, Test Acc: {:.4f}, Best Acc: {}, Num Feats: {:.4f}".format(
                         e, train_loss, train_acc, val_acc, test_acc, best_acc, num_feats))
-                    history.append([train_loss, train_acc, val_acc, test_acc, num_feats])
-                    column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats']
+                history.append([train_loss, train_acc, val_acc, test_acc, num_feats])
+                column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats']
                 
 
 
 
             
 
-            elif isinstance(models[0], DualSTGModel):
-                top_z_list = []
-                btm_z_list = []
-                num_feats = []
-                num_embs = []
-                for model in models:
+        elif isinstance(models[0], DualSTGModel):
+            top_z_list = []
+            btm_z_list = []
+            num_feats = []
+            num_embs = []
+            for model in models:
                     top_z, btm_z, num_emb, num_feat = model.get_gates()
                     top_z_list.append(top_z)
                     btm_z_list.append(btm_z)
                     num_feats.append(num_feat)
                     num_embs.append(num_emb)
-                num_feats = sum(num_feats)
-                num_emb = sum(num_embs)
+            num_feats = sum(num_feats)
+            num_emb = sum(num_embs)
              
-                if e%save_mask_at == 0:
-                    top_z_heatmap = visualize_gate(top_z_list)
-                    btm_z_heatmap = visualize_gate(btm_z_list)
-                    top_z_heatmap.figure.suptitle("Embedding Gates")
-                    btm_z_heatmap.figure.suptitle("Feature Gates")
-                    top_z_heatmap.figure.savefig(
+            if e%save_mask_at == 0:
+                top_z_heatmap = visualize_gate(top_z_list)
+                btm_z_heatmap = visualize_gate(btm_z_list)
+                top_z_heatmap.figure.suptitle("Embedding Gates")
+                btm_z_heatmap.figure.suptitle("Feature Gates")
+                top_z_heatmap.figure.savefig(
                         mask_dir+"Embedding_heatmap_{}.png".format(e))
-                    btm_z_heatmap.figure.savefig(
+                btm_z_heatmap.figure.savefig(
                         mask_dir+"Feature_heatmap_{}.png".format(e))
 
-                if noise_label is not None:
-                    random_label, over_label, short_label = noise_label
-                    all_label = random_label + over_label + short_label
-                    all_label[all_label > 0] = 1
-                    z_pred = np.concatenate(btm_z_list)
-                    z_pred = z_pred.reshape(z_pred.shape[0], )
-                    z_pred = z_pred >= 1e-5
+            if noise_label is not None:
+                random_label, over_label, short_label = noise_label
+                all_label = random_label + over_label + short_label
+                all_label[all_label > 0] = 1
+                z_pred = np.concatenate(btm_z_list)
+                z_pred = z_pred.reshape(z_pred.shape[0], )
+                z_pred = z_pred >= 1e-5
                     # print(z_pred, random_label)
-                    assert len(z_pred) == len(random_label)
-                    random_acc = accuracy_score(random_label, z_pred)
-                    over_acc = accuracy_score(over_label, z_pred)
-                    short_acc = accuracy_score(short_label, z_pred)
-                    total_acc = accuracy_score(all_label, z_pred)
-            
+                assert len(z_pred) == len(random_label)
+                random_acc = accuracy_score(random_label, z_pred)
+                over_acc = accuracy_score(over_label, z_pred)
+                short_acc = accuracy_score(short_label, z_pred)
+                total_acc = accuracy_score(all_label, z_pred)
+                if verbose:
                     print("Random: {:.4f}, Over: {:.4f}, Short: {:.4f}, Total {:4f}".format(
                         random_acc, over_acc, short_acc, total_acc))
                     print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Val Acc {:.4f}, Test Acc: {:.4f}, Best Acc: {}, Num Feats: {:.4f}, Num Emb: {:.4f}".format(
                         e, train_loss, train_acc, val_acc, test_acc, best_acc, num_feats, num_emb))
-                    history.append([train_loss, train_acc, val_acc, test_acc, num_feats, num_emb, 
+                history.append([train_loss, train_acc, val_acc, test_acc, num_feats, num_emb, 
                         random_acc, over_acc, short_acc, total_acc])
-                    column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats', 'num_emb',
+                column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats', 'num_emb',
                         'random_acc', 'over_acc', 'short_acc', 'total_acc']
                 
-                else:
+            else:
+                if verbose:
                     print("Epoch: {}, Train Loss: {:.4f}, Train Acc: {:.4f}, Val Acc {:.4f}, Test Acc: {:.4f}, Best Acc: {}, Num Feats: {:.4f}, Num Emb: {:.4f}".format(
-                    e, train_loss, train_acc, val_acc, test_acc, best_acc, num_feats, num_emb))
-                    history.append([train_loss, train_acc, val_acc, test_acc, num_feats, num_emb])
-                    column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats', 'num_emb']
+                        e, train_loss, train_acc, val_acc, test_acc, best_acc, num_feats, num_emb))
+                history.append([train_loss, train_acc, val_acc, test_acc, num_feats, num_emb])
+                column_names = ['train_loss', 'train_acc', 'val_acc', 'test_acc', 'num_feats', 'num_emb']
                 
 
 
                 
     history = pd.DataFrame(
         history, columns=column_names)
-    history.to_csv(log_dir)
+    # history.to_csv(log_dir)
     return history
 
             

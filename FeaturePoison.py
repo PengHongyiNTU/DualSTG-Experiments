@@ -109,7 +109,7 @@ def insert_shortcut_noise(X, y,
 
 
 def insert_feature_noise(X, y, 
-    num_random_noise=10, num_overwhelemed=5, num_shortcut=5,
+    num_random_noise=10, num_overwhelmed=5, num_shortcut=5,
     noise_std=0.1, noise_skewness=3, noise_type="both",
     noise_lambda_range=(0, 5), 
     coefficient_range=(-10, 10),
@@ -121,7 +121,7 @@ def insert_feature_noise(X, y,
         X, num_random_noise, noise_std, noise_skewness, noise_type, seed
     )
     X_noise = insert_overwhelmed_noise(
-        X_noise, num_overwhelemed, noise_lambda_range, coefficient_range, seed
+        X_noise, num_overwhelmed, noise_lambda_range, coefficient_range, seed
     )
     X_train, X_test, Y_train, Y_test = insert_shortcut_noise(
         X_noise, y, num_shortcut, [p]*num_shortcut, seed, test_size
