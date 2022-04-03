@@ -1,12 +1,15 @@
+from doctest import FAIL_FAST
 from scipy.io import loadmat
 from scipy.sparse import issparse
 import numpy as np
+from sympy import re
 from Data import VFLDataset
 from torch.utils.data import DataLoader
 import VFL
 import torch
 import os
 from SFFS import get_f_stat_index
+import pickle
 
 
 def add_noise_by_percentages(X, percentage: float):
@@ -29,8 +32,10 @@ EPOCH_SETTING = {
      'gisette.mat': 30,
      'Isolet.mat': 100,
      'PCMAC.mat': 30,
-    'RELATHE.mat': 30,
+     'RELATHE.mat': 30,
      }
+
+
 
 
 if __name__ == "__main__":
@@ -38,24 +43,15 @@ if __name__ == "__main__":
     DIR = "Data"
     file_names = os.listdir(DIR)
     # file_names = ['Isolet.mat']
+    # file_names = ['PCMAC.mat', 'RELATHE.mat']
     results = dict.fromkeys(file_names)
-    percentages = np.arange(0.1, 0.6, 0.1)
+    percentages = np.arange(0.1, 1, 0.1)
+
     for file_name in file_names:
-        
         if file_name == 'madelon.mat':
-            break
+            pass
 
-        results = {
-
-            'percentage': percentages,
-            'FNN': [],
-            'STG': [],
-            'GINI+STG': [],
-            'DualSTG': [],
-            'DualSTG-double': [],
-            'SFFS 0.5': [],
-            'SFFS 0.1': [],
-        }
+        file_results = []
 
         if file_name.endswith(".mat"):
             mat = loadmat(os.path.join(DIR, file_name))
@@ -81,17 +77,33 @@ if __name__ == "__main__":
                 os.mkdir(result_dir)
 
             EPOCH = EPOCH_SETTING[file_name]
-            NUM_TRAIL = 3
+            NUM_TRAIL = 2
             EMBED_DIM = 8
             HIDDEN_DIM = [32, 16]
+            NUM_CLIENTS = 2
             if file_name == 'Isolet.mat':
                 HIDDEN_DIM = [64, 32]
             
-            for trail in range(NUM_TRAIL):
-                for percentage in percentages:
-                    num_normal, num_overwhelmed, num_shortcut = add_noise_by_percentages(X, percentage)
+            for percentage in percentages:
+                results = {
+                    'file_name': file_name,
+                    'percentage': percentages,
+                    'FNN': [],
+                    'STG': [],
+                    'GINI+STG': [],
+                    'DualSTG': [],
+                    'DualSTG-double': [],
+                    'SFFS 0.5': [],
+                    'SFFS 0.25': []}
+
+                results['percentage'] = percentage  
+                num_normal, num_overwhelmed, num_shortcut = add_noise_by_percentages(X, percentage)
+        
+                for trail in range(NUM_TRAIL):
+                    print('*' * 89)
+                    print(percentage)
                     dataset = VFLDataset(data_source=(X, y),
-                                         num_clients=3,
+                                         num_clients=NUM_CLIENTS,
                                          gini_portion=None,
                                          insert_noise=True,
                                          num_random_samples=num_normal,
@@ -100,7 +112,7 @@ if __name__ == "__main__":
                                          test_size=0.5)
 
                     train_loader = DataLoader(
-                        dataset.train(), batch_size=128, shuffle=True)
+                        dataset.train(), batch_size=256, shuffle=True)
                     val_loader = DataLoader(
                         dataset.valid(), batch_size=1000, shuffle=True)
                     test_loader = DataLoader(dataset.test(), batch_size=1000, shuffle=True)
@@ -130,7 +142,8 @@ if __name__ == "__main__":
                         noise_label=noisy_label
                     )
                     fnn_acc = history.tail(3)['test_acc'].mean()
-                    print(fnn_acc)
+                    print(f'FNN acc: {fnn_acc}')
+                    results['FNN'].append(fnn_acc)
 
                     ###########################
                     # STG Model
@@ -141,19 +154,22 @@ if __name__ == "__main__":
                     models, top_model = VFL.make_binary_models(
                         input_dim_list=input_dim_list,
                         type='STG',
-                        emb_dim=8,
+                        emb_dim=EMBED_DIM,
                         output_dim=output_dim,
-                        hidden_dims=[32, 16],
+                        hidden_dims=HIDDEN_DIM,
                         activation='relu')
-                    VFL.train(
+                    stg_history = VFL.train(
                         models, top_model, train_loader, val_loader, test_loader,
                         epochs=EPOCH,
                         criterion=criterion,
-                        verbose=True,
-                        log_dir=os.path.join(result_dir, saving_name) + ".csv",
+                        verbose=False,
                         save_mask_at=100000,
                         noise_label=noisy_label
                     )
+
+                    stg_acc = stg_history.tail(3)['test_acc'].mean()
+                    print(f'STG acc: {stg_acc}')
+                    results['STG'].append(stg_acc)
 
                     ###########################
                     # STG with GINI Initialization
@@ -167,19 +183,24 @@ if __name__ == "__main__":
                     models, top_model = VFL.make_binary_models(
                         input_dim_list=input_dim_list,
                         type='STG',
-                        emb_dim=8,
+                        emb_dim=EMBED_DIM,
                         output_dim=output_dim,
-                        hidden_dims=[32, 16],
+                        hidden_dims=HIDDEN_DIM,
                         activation='relu',
                         lam=0.1,
                         mus=mus)
-                    VFL.train(models, top_model, train_loader, val_loader, test_loader,
+                
+                    stg_gini_history = VFL.train(models, top_model, train_loader, val_loader, test_loader,
                               epochs=EPOCH,
                               criterion=criterion,
-                              verbose=True,
-                              log_dir=os.path.join(result_dir, saving_name) + ".csv",
+                              verbose=False,
                               save_mask_at=100000,
                               noise_label=noisy_label)
+
+                    stg_gini_acc = stg_gini_history.tail(3)['test_acc'].mean()
+                    print(f'STG with GINI acc: {stg_gini_acc}')
+                    results['GINI+STG'].append(stg_gini_acc)
+                    
 
                     ###########################
                     # Dual-STG  Model
@@ -192,21 +213,24 @@ if __name__ == "__main__":
                     models, top_model = VFL.make_binary_models(
                         input_dim_list=input_dim_list,
                         type='DualSTG',
-                        emb_dim=8,
+                        emb_dim=EMBED_DIM,
                         output_dim=output_dim,
-                        hidden_dims=[32, 16],
+                        hidden_dims=HIDDEN_DIM,
                         activation='relu',
                         lam=0.1, top_lam=0.1,
                         mus=mus)
 
-                    VFL.train(
+                    dualstg_gini_history = VFL.train(
                         models, top_model, train_loader, val_loader, test_loader,
                         epochs=EPOCH,
                         criterion=criterion,
-                        verbose=True,
-                        log_dir=os.path.join(result_dir, saving_name) + ".csv",
+                        verbose=False,
                         save_mask_at=100000,
                         noise_label=noisy_label)
+                    
+                    dualstg_gini_acc = dualstg_gini_history.tail(3)['test_acc'].mean()
+                    print(f'Dual-STG acc: {dualstg_gini_acc}')
+                    results['DualSTG'].append(dualstg_gini_acc)
 
                     ###########################
                     # Double-Dual-STG  Model
@@ -217,58 +241,70 @@ if __name__ == "__main__":
                     models, top_model = VFL.make_binary_models(
                         input_dim_list=input_dim_list,
                         type='DualSTG',
-                        emb_dim=8,
+                        emb_dim=EMBED_DIM,
                         output_dim=output_dim,
-                        hidden_dims=[32, 16],
+                        hidden_dims=HIDDEN_DIM,
                         activation='relu',
                         lam=0.1, top_lam=0.1,
                         mus=mus)
-                    VFL.train(
+
+
+                    dualstg_long_history = VFL.train(
                         models, top_model, train_loader, val_loader, test_loader,
                         epochs=2 * EPOCH,
                         criterion=criterion,
-                        verbose=True,
-                        log_dir=os.path.join(result_dir, saving_name) + ".csv",
+                        verbose=False,
                         save_mask_at=100000,
                         noise_label=noisy_label)
+                    
+                    dualstg_long_acc = dualstg_long_history.tail(3)['test_acc'].mean()
+                    print(f'Double-Dual-STG acc: {dualstg_long_acc}')
+                    results['DualSTG-double'].append(dualstg_long_acc)
+
 
                     ###########################
                     # SFFS Half Model
                     ############################
+
                     print("SFFS Half")
                     saving_name = f'SFFS_Half_{percentage}_{trail}'
                     # index = get_f_stat_index(X, y)
                     gini_labels = dataset.gini_filter(0.5)
                     gini_labels = gini_labels.flatten()
                     # print(gini_labels.shape)
-                    X, y = dataset.get_data()
+                    X_temp, y_temp = dataset.get_data()
                     # print(X.shape, y.shape)
-                    X_filtered = X[:, np.nonzero(gini_labels)].squeeze()
+                    X_filtered = X_temp[:, np.nonzero(gini_labels)].squeeze()
                     # print(X_filtered.shape)
                     dataset = VFLDataset(data_source=(X_filtered, y),
-                                         num_clients=2,
+                                         num_clients=NUM_CLIENTS,
                                          gini_portion=None,
                                          insert_noise=False,
                                          test_size=0.5)
 
-                    train_loader = DataLoader(dataset.train(), batch_size=256, shuffle=True)
-                    val_loader = DataLoader(dataset.valid(), batch_size=1000, shuffle=True)
-                    test_loader = DataLoader(dataset.test(), batch_size=1000, shuffle=True)
+                    train_loader = DataLoader(dataset.train(), batch_size=256, shuffle=False)
+                    val_loader = DataLoader(dataset.valid(), batch_size=1000, shuffle=False)
+                    test_loader = DataLoader(dataset.test(), batch_size=1000, shuffle=False)
                     input_dim_list = dataset.get_input_dim_list()
+                    
                     models, top_model = VFL.make_binary_models(
                         input_dim_list=input_dim_list,
                         type='FNN',
-                        emb_dim=8,
+                        emb_dim=EMBED_DIM,
                         output_dim=output_dim,
-                        hidden_dims=[32, 16],
+                        hidden_dims=HIDDEN_DIM,
                         activation='relu')
-                    VFL.train(models, top_model, train_loader, val_loader, test_loader,
+
+                    sffs_half_history = VFL.train(models, top_model, train_loader, val_loader, test_loader,
                               epochs=EPOCH,
                               criterion=criterion,
-                              verbose=True,
-                              log_dir=os.path.join(result_dir, saving_name) + ".csv",
+                              verbose=False,
                               save_mask_at=100000,
                               noise_label=noisy_label)
+                    sffs_half_acc = sffs_half_history.tail(3)['test_acc'].mean()
+                    print(f'SFFS Half acc: {sffs_half_acc}')
+                    results['SFFS 0.5'].append(sffs_half_acc)
+
 
                     ###########################
                     # SFFS Quarter Model
@@ -278,31 +314,43 @@ if __name__ == "__main__":
                     gini_labels = dataset.gini_filter(0.25)
                     gini_labels = gini_labels.flatten()
                     # print(gini_labels.shape)
-                    X, y = dataset.get_data()
+                    X_temp, y_temp = dataset.get_data()
                     # print(X.shape, y.shape)
-                    X_filtered = X[:, np.nonzero(gini_labels)].squeeze()
+                    X_filtered = X_temp[:, np.nonzero(gini_labels)].squeeze()
                     # print(X_filtered.shape)
                     dataset = VFLDataset(data_source=(X_filtered, y),
-                                         num_clients=2,
+                                         num_clients=NUM_CLIENTS,
                                          gini_portion=None,
                                          insert_noise=False,
                                          test_size=0.5)
 
-                    train_loader = DataLoader(dataset.train(), batch_size=256, shuffle=True)
-                    val_loader = DataLoader(dataset.valid(), batch_size=1000, shuffle=True)
-                    test_loader = DataLoader(dataset.test(), batch_size=1000, shuffle=True)
+                    train_loader = DataLoader(dataset.train(), batch_size=256, shuffle=False)
+                    val_loader = DataLoader(dataset.valid(), batch_size=1000, shuffle=False)
+                    test_loader = DataLoader(dataset.test(), batch_size=1000, shuffle=False)
                     input_dim_list = dataset.get_input_dim_list()
+                   
                     models, top_model = VFL.make_binary_models(
                         input_dim_list=input_dim_list,
                         type='FNN',
-                        emb_dim=8,
+                        emb_dim=EMBED_DIM,
                         output_dim=output_dim,
-                        hidden_dims=[32, 16],
+                        hidden_dims=HIDDEN_DIM,
                         activation='relu')
-                    VFL.train(models, top_model, train_loader, val_loader, test_loader,
+
+                    sffs_quarter_history = VFL.train(models, top_model, train_loader, val_loader, test_loader,
                               epochs=EPOCH,
                               criterion=criterion,
-                              verbose=True,
-                              log_dir=os.path.join(result_dir, saving_name) + ".csv",
+                              verbose=False,
                               save_mask_at=100000,
                               noise_label=noisy_label)
+
+                    sffs_quarter_acc = sffs_quarter_history.tail(3)['test_acc'].mean()
+                    print(f'SFFS Quarter acc: {sffs_quarter_acc}')
+                    results['SFFS 0.25'].append(sffs_quarter_acc)
+                
+                print(results)
+                file_results.append(results)
+            path = os.path.join(result_dir, f'{file_name}.pkl')
+            pickle.dump(file_results, open(path, 'wb'))
+            print('Finished one Trial')
+                    

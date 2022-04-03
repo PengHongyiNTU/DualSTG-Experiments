@@ -48,7 +48,7 @@ class VFLDataset(Dataset):
                     noise_type="both",
                     noise_lambda_range=(0, 5), 
                     coefficient_range=(-10, 10),
-                    p=0.4, test_size=0.5,
+                    p=0.5, test_size=0.5,
                     permute=True, 
                     seed=0):
         self.permute = permute
